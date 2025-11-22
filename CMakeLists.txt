@@ -14,6 +14,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     QuickControls2
 )
 option(IMAGES2PDF_QT_ENABLE_DEPLOY "Bundle QML dependencies via qt6_deploy during install" ON)
+option(IMAGES2PDF_QT_MACOS_BUNDLE "Build a macOS .app bundle instead of a standalone binary" OFF)
 
 qt_policy(SET QTP0001 NEW)
 qt_policy(SET QTP0004 NEW)
@@ -26,9 +27,15 @@ file(GLOB_RECURSE QML_SOURCES CONFIGURE_DEPENDS
     "src/*.qml"
 )
 
+set(IMAGES2PDF_QT_TARGET_OPTIONS "")
+if (WIN32)
+    list(APPEND IMAGES2PDF_QT_TARGET_OPTIONS WIN32)
+endif()
+if (APPLE AND IMAGES2PDF_QT_MACOS_BUNDLE)
+    list(APPEND IMAGES2PDF_QT_TARGET_OPTIONS MACOSX_BUNDLE)
+endif()
 qt_add_executable(images2pdf-qt
-    MACOSX_BUNDLE
-    WIN32
+    ${IMAGES2PDF_QT_TARGET_OPTIONS}
     ${CPP_SOURCES}
     ${HEADERS}
 )
