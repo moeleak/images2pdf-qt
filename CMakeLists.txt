@@ -28,6 +28,7 @@ file(GLOB_RECURSE QML_SOURCES CONFIGURE_DEPENDS
 
 qt_add_executable(images2pdf-qt
     MACOSX_BUNDLE
+    WIN32
     ${CPP_SOURCES}
     ${HEADERS}
 )

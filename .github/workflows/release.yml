@@ -14,18 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            artifact_suffix: linux-x86_64
-            package_path: install
-            package_is_dir: true
-            qt_arch: linux_gcc_64
-            cmake_args: "-DBUILD_SHARED_LIBS=OFF"
-          - os: macos-latest
-            artifact_suffix: macos-x86_64
-            package_path: install
-            package_is_dir: true
-            qt_arch: clang_64
-            cmake_args: "-DBUILD_SHARED_LIBS=OFF"
           - os: windows-latest
             artifact_suffix: windows-x86_64
             package_path: install
@@ -150,6 +138,13 @@ jobs:
           QmlImports = runtime/qml
           Translations = runtime/translations
           EOF
+      - name: Remove MSVC redistributable installer (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST="${{ github.workspace }}/install"
+          rm -f "$DEST/vc_redist.x64.exe"
       - name: Package artifact
         id: package
         shell: bash
