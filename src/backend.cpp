@@ -322,9 +322,14 @@ bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
 
   for (int i = 0; i < fileList.size(); ++i) {
     const QString &path = fileList.at(i);
+    const QString fileName = QFileInfo(path).fileName();
+    setStatusText(tr("正在处理第 %1/%2 张：%3")
+                      .arg(i + 1)
+                      .arg(std::max(1, totalFiles))
+                      .arg(fileName));
     const QImage image(path);
     if (image.isNull()) {
-      failedFiles << QFileInfo(path).fileName();
+      failedFiles << fileName;
       continue;
     }
 

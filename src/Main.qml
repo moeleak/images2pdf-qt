@@ -179,7 +179,6 @@ ApplicationWindow {
             }
         }
 
-        // ... (输出设置 GroupBox 保持不变) ...
         GroupBox {
             title: qsTr("输出设置")
             Layout.fillWidth: true
@@ -235,10 +234,9 @@ ApplicationWindow {
             }
             ProgressBar {
                 Layout.fillWidth: true
-                visible: backend.conversionRunning
                 from: 0
                 to: 1
-                indeterminate: backend.conversionProgress <= 0.001
+                indeterminate: backend.conversionRunning && backend.conversionProgress <= 0.001
                 value: backend.conversionProgress
             }
             Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: backend.statusText }

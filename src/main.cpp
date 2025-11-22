@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
   QQuickStyle::setStyle("Material");
 
   qmlRegisterUncreatableType<Backend>("Images2Pdf", 1, 0, "Backend",
-                                      "Backend 是通过 context property 提供的。");
+                                      "Create backend for UI access");
 
   Backend backend;
   QQmlApplicationEngine engine;
