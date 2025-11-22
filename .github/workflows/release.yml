@@ -1,0 +1,105 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux-x86_64
+            package_path: build/image2pdfs-qt
+            package_is_dir: false
+            qt_arch: linux_gcc_64
+            cmake_args: "-DBUILD_SHARED_LIBS=OFF"
+          - os: macos-latest
+            artifact_suffix: macos-x86_64
+            package_path: build/image2pdfs-qt.app
+            package_is_dir: true
+            qt_arch: clang_64
+            cmake_args: "-DBUILD_SHARED_LIBS=OFF"
+          - os: windows-latest
+            artifact_suffix: windows-x86_64
+            package_path: build/image2pdfs-qt.exe
+            package_is_dir: false
+            qt_arch: win64_msvc2022_64
+            cmake_args: "-DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
+    env:
+      BUILD_TYPE: Release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v3
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: "6.10.0"
+          cache: true
+          arch: ${{ matrix.qt_arch }}
+          modules: qt5compat qtshadertools
+      - name: Configure CMake
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ${{ matrix.cmake_args }}
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+      - name: Package artifact
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_NAME="image2pdfs-qt-${{ matrix.artifact_suffix }}"
+          DEST="dist/$ARTIFACT_NAME"
+          mkdir -p "$DEST"
+          if [[ "${{ matrix.package_is_dir }}" == "true" ]]; then
+            cp -R "${{ matrix.package_path }}" "$DEST/"
+          else
+            cp "${{ matrix.package_path }}" "$DEST/"
+          fi
+          echo "artifact_dir=$DEST" >> "$GITHUB_OUTPUT"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: image2pdfs-qt-${{ matrix.artifact_suffix }}
+          path: ${{ steps.package.outputs.artifact_dir }}
+          if-no-files-found: error
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Create release archives
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for dir in dist/*; do
+            if [[ -d "$dir" ]]; then
+              name="$(basename "$dir")"
+              cmake -E chdir dist cmake -E tar cf "${name}.zip" --format=zip "$name"
+            fi
+          done
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: dist/**/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
