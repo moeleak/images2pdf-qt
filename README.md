@@ -11,5 +11,5 @@
 ## Linux/macOS
 
 ```
-$ nix run github:moeleak/images2pdf
+$ nix run github:moeleak/images2pdf-qt
 ```

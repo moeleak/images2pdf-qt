@@ -6,7 +6,6 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
-    // ... (窗口属性保持不变) ...
     property int layoutMargin: 24
     width: 680
     height: 300
@@ -41,7 +40,6 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 18
 
-        // ... (GroupBox "待转换的图片" 头部保持不变) ...
         GroupBox {
             title: qsTr("待转换的图片")
             Layout.fillWidth: true
@@ -62,7 +60,6 @@ ApplicationWindow {
                     Label { Layout.fillWidth: true; horizontalAlignment: Qt.AlignRight; color: Material.color(Material.Grey); text: qsTr("共 %1 张").arg(backend.imageCount) }
                 }
 
-                // --- 图片列表 ---
                 ListView {
                     id: imageList
                     Layout.fillWidth: true
@@ -182,7 +179,6 @@ ApplicationWindow {
             Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: backend.statusText }
         }
     }
-    // ... (Dialogs 保持不变) ...
     FileDialog { id: imageFileDialog; title: qsTr("选择图片文件"); nameFilters: [qsTr("图像文件 (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.tiff)")]; fileMode: FileDialog.OpenFiles; onAccepted: { const files = []; for (let i = 0; i < selectedFiles.length; ++i) { const localPath = localPathFromUrl(selectedFiles[i]); if (localPath.length > 0) files.push(localPath); } if (files.length > 0) backend.addImages(files); } }
     FolderDialog { id: folderDialog; title: qsTr("选择图片文件夹"); onAccepted: { const folderPath = localPathFromUrl(selectedFolder); if (folderPath.length > 0) backend.addDirectory(folderPath, includeSubdirectories); } }
     FileDialog { id: saveDialog; title: qsTr("保存 PDF"); nameFilters: [qsTr("PDF 文件 (*.pdf)")]; fileMode: FileDialog.SaveFile; defaultSuffix: "pdf"; onAccepted: { if (selectedFile) { var filePath = localPathFromUrl(selectedFile); if (!filePath.toLowerCase().endsWith(".pdf")) filePath = filePath + ".pdf"; outputFile = filePath; } } }

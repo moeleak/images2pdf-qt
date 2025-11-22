@@ -16,10 +16,6 @@
 #include <cmath>
 #include <limits>
 
-// ==========================================
-// ImageModel Implementation
-// ==========================================
-
 ImageModel::ImageModel(QObject *parent) : QAbstractListModel(parent) {}
 
 int ImageModel::rowCount(const QModelIndex &parent) const {
@@ -40,7 +36,6 @@ QVariant ImageModel::data(const QModelIndex &index, int role) const {
 
 QHash<int, QByteArray> ImageModel::roleNames() const {
   QHash<int, QByteArray> roles;
-  // 映射到 "modelData" 以兼容 QML 默认行为
   roles[PathRole] = "modelData";
   return roles;
 }
@@ -67,8 +62,6 @@ void ImageModel::move(int from, int to) {
       from == to)
     return;
 
-  // 关键：使用 beginMoveRows 通知 View 仅仅移动了位置，不要销毁 Delegate
-  // 如果 from < to, Qt 要求目标位置 + 1
   int dest = (to > from) ? to + 1 : to;
 
   if (beginMoveRows(QModelIndex(), from, from, QModelIndex(), dest)) {
@@ -88,10 +81,6 @@ void ImageModel::clear() {
 const QStringList &ImageModel::getList() const { return m_data; }
 
 int ImageModel::count() const { return m_data.size(); }
-
-// ==========================================
-// Backend Implementation
-// ==========================================
 
 namespace {
 const QSet<QString> &supportedImageExtensions() {
@@ -286,7 +275,6 @@ bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
   int convertedPages = 0;
   QStringList failedFiles;
 
-  // 从 Model 获取列表
   const QStringList &fileList = m_model->getList();
 
   for (int i = 0; i < fileList.size(); ++i) {
