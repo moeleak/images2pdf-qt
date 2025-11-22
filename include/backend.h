@@ -82,7 +82,8 @@ public:
   convertToPdf(const QString &outputFile, int marginMillimeters = 10,
                bool stretchToPage = false,
                const QString &pageSizeId = QStringLiteral("A4"),
-               bool landscapeOrientation = false);
+               bool landscapeOrientation = false,
+               bool convertToGrayscale = false);
 
 signals:
   void statusTextChanged();

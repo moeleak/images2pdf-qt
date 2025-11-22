@@ -20,6 +20,7 @@ ApplicationWindow {
     Material.accent: Material.Pink
     property string outputFile: ""
     property bool stretchToPage: false
+    property bool forceGrayscale: false
     property bool includeSubdirectories: true
     property string selectedPageSize: "A4"
     property bool landscapeOrientation: false
@@ -198,13 +199,43 @@ ApplicationWindow {
                     Slider { id: marginSlider; Layout.fillWidth: true; from: 0; to: 30; stepSize: 1; value: 10 }
                     Label { width: 40; horizontalAlignment: Qt.AlignHCenter; text: Math.round(marginSlider.value) }
                 }
+                ListModel {
+                    id: pageSizeModel
+                    ListElement { text: qsTr("A3"); value: "A3" }
+                    ListElement { text: qsTr("A4"); value: "A4" }
+                    ListElement { text: qsTr("A5"); value: "A5" }
+                    ListElement { text: qsTr("B5"); value: "B5" }
+                    ListElement { text: qsTr("Letter"); value: "Letter" }
+                    ListElement { text: qsTr("Legal"); value: "Legal" }
+                    ListElement { text: qsTr("Tabloid"); value: "Tabloid" }
+                }
                 RowLayout {
                     Layout.fillWidth: true; spacing: 12
                     Label { text: qsTr("纸张大小"); font.bold: true }
                     ComboBox {
                         id: pageSizeCombo; Layout.fillWidth: true; textRole: "text"; valueRole: "value"
-                        model: [ { text: qsTr("A3"), value: "A3" }, { text: qsTr("A4"), value: "A4" }, { text: qsTr("A5"), value: "A5" }, { text: qsTr("B5"), value: "B5" }, { text: qsTr("Letter"), value: "Letter" }, { text: qsTr("Legal"), value: "Legal" }, { text: qsTr("Tabloid"), value: "Tabloid" } ]
-                        onCurrentValueChanged: selectedPageSize = currentValue || "A4"; Component.onCompleted: selectedPageSize = currentValue || "A4"
+                        model: pageSizeModel
+                        function updateIndexFromSelection() {
+                            const desired =
+                                    selectedPageSize && selectedPageSize.length > 0
+                                    ? selectedPageSize
+                                    : "A4";
+                            for (var i = 0; i < pageSizeModel.count; ++i) {
+                                if (pageSizeModel.get(i).value === desired) {
+                                    if (currentIndex !== i)
+                                        currentIndex = i;
+                                    return;
+                                }
+                            }
+                            if (pageSizeModel.count > 0 && currentIndex !== 0)
+                                currentIndex = 0;
+                        }
+                        Component.onCompleted: updateIndexFromSelection()
+                        onActivated: function(index) {
+                            if (index < 0 || index >= pageSizeModel.count)
+                                return;
+                            selectedPageSize = pageSizeModel.get(index).value;
+                        }
                     }
                 }
                 RowLayout {
@@ -221,6 +252,11 @@ ApplicationWindow {
                     Label { Layout.fillWidth: true; text: qsTr("拉伸填满页面（不保留比例）") }
                     Switch { checked: stretchToPage; onToggled: stretchToPage = checked }
                 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Label { Layout.fillWidth: true; text: qsTr("强制转换为灰度") }
+                    Switch { checked: forceGrayscale; onToggled: forceGrayscale = checked }
+                }
                 Item { Layout.fillWidth: true; Layout.preferredHeight: 6 }
             }
         }
@@ -230,7 +266,12 @@ ApplicationWindow {
             Button {
                 Layout.fillWidth: true; text: backend.conversionRunning ? qsTr("正在转换…") : qsTr("开始转换")
                 enabled: backend.imageCount > 0 && outputFile.length > 0 && !backend.conversionRunning
-                onClicked: backend.convertToPdf(outputFile, Math.round(marginSlider.value), stretchToPage, selectedPageSize, landscapeOrientation)
+                onClicked: backend.convertToPdf(outputFile,
+                                                Math.round(marginSlider.value),
+                                                stretchToPage,
+                                                selectedPageSize,
+                                                landscapeOrientation,
+                                                forceGrayscale)
             }
             ProgressBar {
                 Layout.fillWidth: true

@@ -181,7 +181,6 @@ void Backend::removeImage(int index) {
 }
 
 void Backend::moveImage(int fromIndex, int toIndex) {
-  // 不再 emit 全局 change 信号，仅内部移动
   m_model->move(fromIndex, toIndex);
   setStatusText(QStringLiteral("已更新图片顺序。"));
 }
@@ -240,7 +239,7 @@ bool Backend::addDirectory(const QString &directoryPath,
 
 bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
                            bool stretchToPage, const QString &pageSizeId,
-                           bool landscapeOrientation) {
+                           bool landscapeOrientation, bool convertToGrayscale) {
   if (m_conversionRunning) {
     setStatusText(QStringLiteral("正在转换，请稍候…"));
     return false;
@@ -327,10 +326,14 @@ bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
                       .arg(i + 1)
                       .arg(std::max(1, totalFiles))
                       .arg(fileName));
-    const QImage image(path);
+    QImage image(path);
     if (image.isNull()) {
       failedFiles << fileName;
       continue;
+    }
+
+    if (convertToGrayscale) {
+      image = image.convertToFormat(QImage::Format_Grayscale8);
     }
 
     if (convertedPages > 0) {
@@ -354,8 +357,7 @@ bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
 
     painter.drawImage(targetRect, image);
     ++convertedPages;
-    setConversionProgress(static_cast<double>(i + 1) /
-                          std::max(1, totalFiles));
+    setConversionProgress(static_cast<double>(i + 1) / std::max(1, totalFiles));
     QCoreApplication::processEvents();
   }
 
@@ -560,15 +562,15 @@ void Backend::resortByTime(QStringList &entries, bool newestFirst) const {
     data.push_back(TimeEntry{path, stamp});
   }
 
-  std::stable_sort(data.begin(), data.end(),
-                   [newestFirst](const TimeEntry &left,
-                                 const TimeEntry &right) {
-                     if (left.timestamp == right.timestamp) {
-                       return left.path < right.path;
-                     }
-                     return newestFirst ? left.timestamp > right.timestamp
-                                        : left.timestamp < right.timestamp;
-                   });
+  std::stable_sort(
+      data.begin(), data.end(),
+      [newestFirst](const TimeEntry &left, const TimeEntry &right) {
+        if (left.timestamp == right.timestamp) {
+          return left.path < right.path;
+        }
+        return newestFirst ? left.timestamp > right.timestamp
+                           : left.timestamp < right.timestamp;
+      });
 
   for (int i = 0; i < static_cast<int>(data.size()); ++i) {
     entries[i] = data.at(i).path;
