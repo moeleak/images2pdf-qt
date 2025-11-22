@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import Images2Pdf 1.0
 
 ApplicationWindow {
     id: win
@@ -58,6 +59,63 @@ ApplicationWindow {
                     CheckBox { checked: includeSubdirectories; text: qsTr("包含子文件夹"); onToggled: includeSubdirectories = checked }
                     Button { text: qsTr("清空列表"); enabled: backend.imageCount > 0; onClicked: backend.clearImages() }
                     Label { Layout.fillWidth: true; horizontalAlignment: Qt.AlignRight; color: Material.color(Material.Grey); text: qsTr("共 %1 张").arg(backend.imageCount) }
+                }
+
+                ListModel { id: sortModeModel }
+
+                RowLayout {
+                    Layout.fillWidth: true; spacing: 12
+                    Label { text: qsTr("排序方式"); font.bold: true }
+                    ComboBox {
+                        id: sortCombo
+                        Layout.fillWidth: true
+                        textRole: "text"
+                        valueRole: "value"
+                        model: sortModeModel
+
+                        function ensureModelPopulated() {
+                            if (sortModeModel.count > 0)
+                                return;
+                            sortModeModel.append({ text: qsTr("文件名：A → Z"), value: Backend.SortNameAscending });
+                            sortModeModel.append({ text: qsTr("文件名：Z → A"), value: Backend.SortNameDescending });
+                            sortModeModel.append({ text: qsTr("修改时间：最新优先"), value: Backend.SortTimeNewestFirst });
+                            sortModeModel.append({ text: qsTr("修改时间：最旧优先"), value: Backend.SortTimeOldestFirst });
+                        }
+
+                        function updateIndexFromBackend() {
+                            ensureModelPopulated();
+                            for (var i = 0; i < sortModeModel.count; ++i) {
+                                if (sortModeModel.get(i).value === backend.sortMode) {
+                                    if (currentIndex !== i)
+                                        currentIndex = i;
+                                    return;
+                                }
+                            }
+                            if (sortModeModel.count > 0) {
+                                const fallbackValue = sortModeModel.get(0).value;
+                                if (currentIndex !== 0)
+                                    currentIndex = 0;
+                                if (backend.sortMode !== fallbackValue)
+                                    backend.sortMode = fallbackValue;
+                            }
+                        }
+
+                        Component.onCompleted: {
+                            ensureModelPopulated();
+                            updateIndexFromBackend();
+                        }
+
+                        onActivated: function(index) {
+                            if (index < 0 || index >= sortModeModel.count)
+                                return;
+                            backend.sortMode = sortModeModel.get(index).value;
+                        }
+
+                        Connections {
+                            target: backend
+                            function onSortModeChanged() { sortCombo.updateIndexFromBackend() }
+                        }
+                    }
                 }
 
                 ListView {
@@ -175,7 +233,14 @@ ApplicationWindow {
                 enabled: backend.imageCount > 0 && outputFile.length > 0 && !backend.conversionRunning
                 onClicked: backend.convertToPdf(outputFile, Math.round(marginSlider.value), stretchToPage, selectedPageSize, landscapeOrientation)
             }
-            ProgressBar { Layout.fillWidth: true; visible: backend.conversionRunning; indeterminate: true }
+            ProgressBar {
+                Layout.fillWidth: true
+                visible: backend.conversionRunning
+                from: 0
+                to: 1
+                indeterminate: backend.conversionProgress <= 0.001
+                value: backend.conversionProgress
+            }
             Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: backend.statusText }
         }
     }

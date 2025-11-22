@@ -1,5 +1,8 @@
 #include "backend.h"
 
+#include <QCollator>
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
@@ -15,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 ImageModel::ImageModel(QObject *parent) : QAbstractListModel(parent) {}
 
@@ -78,6 +82,14 @@ void ImageModel::clear() {
   endResetModel();
 }
 
+void ImageModel::replaceAll(const QStringList &paths) {
+  if (m_data == paths)
+    return;
+  beginResetModel();
+  m_data = paths;
+  endResetModel();
+}
+
 const QStringList &ImageModel::getList() const { return m_data; }
 
 int ImageModel::count() const { return m_data.size(); }
@@ -101,7 +113,8 @@ bool hasSupportedExtension(const QString &filePath) {
 Backend::Backend(QObject *parent)
     : QObject(parent), m_windowTitle(QStringLiteral("批量图片转 PDF")),
       m_statusText(QStringLiteral("请选择需要转换的图片。")),
-      m_conversionRunning(false) {
+      m_conversionRunning(false), m_conversionProgress(0.0),
+      m_sortMode(SortNameAscending) {
   m_model = new ImageModel(this);
 }
 
@@ -111,6 +124,30 @@ int Backend::imageCount() const { return m_model->count(); }
 QString Backend::windowTitle() const { return m_windowTitle; }
 QString Backend::statusText() const { return m_statusText; }
 bool Backend::conversionRunning() const { return m_conversionRunning; }
+double Backend::conversionProgress() const { return m_conversionProgress; }
+int Backend::sortMode() const { return static_cast<int>(m_sortMode); }
+
+void Backend::setSortMode(int mode) {
+  const SortMode normalized = normalizeSortMode(mode);
+  if (m_sortMode == normalized) {
+    if (normalized == SortManual) {
+      setStatusText(QStringLiteral("当前为手动排序，可使用箭头调整顺序。"));
+    } else {
+      applyCurrentSort(true);
+    }
+    return;
+  }
+
+  m_sortMode = normalized;
+  emit sortModeChanged();
+
+  if (normalized == SortManual) {
+    setStatusText(QStringLiteral("已切换到手动排序，可使用箭头调整顺序。"));
+    return;
+  }
+
+  applyCurrentSort(true);
+}
 
 void Backend::addImages(const QStringList &paths) {
   QStringList normalized;
@@ -132,6 +169,7 @@ void Backend::addImages(const QStringList &paths) {
   }
 
   m_model->addPaths(normalized);
+  applyCurrentSort(false);
   emit imageCountChanged();
   setStatusText(tr("已选择 %1 张图片。").arg(m_model->count()));
 }
@@ -270,12 +308,17 @@ bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
   const QRect pageRect(marginPixels, marginPixels, usableWidth, usableHeight);
 
   setConversionRunning(true);
-  const auto guard = qScopeGuard([this]() { setConversionRunning(false); });
+  setConversionProgress(0.0);
+  const auto guard = qScopeGuard([this]() {
+    setConversionRunning(false);
+    setConversionProgress(0.0);
+  });
 
   int convertedPages = 0;
   QStringList failedFiles;
 
   const QStringList &fileList = m_model->getList();
+  const int totalFiles = fileList.size();
 
   for (int i = 0; i < fileList.size(); ++i) {
     const QString &path = fileList.at(i);
@@ -306,6 +349,9 @@ bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
 
     painter.drawImage(targetRect, image);
     ++convertedPages;
+    setConversionProgress(static_cast<double>(i + 1) /
+                          std::max(1, totalFiles));
+    QCoreApplication::processEvents();
   }
 
   if (convertedPages == 0) {
@@ -323,6 +369,7 @@ bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
                       .arg(outputInfo.fileName()));
   }
 
+  setConversionProgress(1.0);
   return true;
 }
 
@@ -340,6 +387,15 @@ void Backend::setConversionRunning(bool running) {
   }
   m_conversionRunning = running;
   emit conversionRunningChanged();
+}
+
+void Backend::setConversionProgress(double progress) {
+  const double clamped = std::clamp(progress, 0.0, 1.0);
+  if (std::abs(clamped - m_conversionProgress) < 0.00001) {
+    return;
+  }
+  m_conversionProgress = clamped;
+  emit conversionProgressChanged();
 }
 
 QString Backend::cleanedPath(const QString &path) const {
@@ -386,4 +442,146 @@ QPageSize Backend::pageSizeFromName(const QString &pageName) const {
     return QPageSize(QPageSize::Tabloid);
   }
   return QPageSize(QPageSize::A4);
+}
+
+void Backend::applyCurrentSort(bool announceChange) {
+  const SortMode mode = m_sortMode;
+  if (mode == SortManual) {
+    if (announceChange) {
+      setStatusText(QStringLiteral("当前为手动排序，可使用箭头调整顺序。"));
+    }
+    return;
+  }
+
+  const QStringList current = m_model->getList();
+  if (current.size() < 2) {
+    if (announceChange) {
+      setStatusText(sortDescription(mode));
+    }
+    return;
+  }
+
+  QStringList sorted = current;
+
+  switch (mode) {
+  case SortNameAscending:
+    resortByName(sorted, true);
+    break;
+  case SortNameDescending:
+    resortByName(sorted, false);
+    break;
+  case SortTimeNewestFirst:
+    resortByTime(sorted, true);
+    break;
+  case SortTimeOldestFirst:
+    resortByTime(sorted, false);
+    break;
+  case SortManual:
+    break;
+  }
+
+  if (sorted != current) {
+    m_model->replaceAll(sorted);
+  }
+
+  if (announceChange) {
+    setStatusText(sortDescription(mode));
+  }
+}
+
+Backend::SortMode Backend::normalizeSortMode(int value) {
+  switch (static_cast<SortMode>(value)) {
+  case SortManual:
+  case SortNameAscending:
+  case SortNameDescending:
+  case SortTimeNewestFirst:
+  case SortTimeOldestFirst:
+    return static_cast<SortMode>(value);
+  }
+  return SortManual;
+}
+
+void Backend::resortByName(QStringList &entries, bool ascending) const {
+  if (entries.size() < 2)
+    return;
+
+  struct NameEntry {
+    QString path;
+    QString fileName;
+  };
+
+  std::vector<NameEntry> data;
+  data.reserve(entries.size());
+  for (const QString &path : entries) {
+    data.push_back(NameEntry{path, QFileInfo(path).fileName()});
+  }
+
+  QCollator collator;
+  collator.setCaseSensitivity(Qt::CaseInsensitive);
+  collator.setNumericMode(true);
+
+  std::stable_sort(data.begin(), data.end(),
+                   [ascending, collator](const NameEntry &left,
+                                         const NameEntry &right) mutable {
+                     int cmp = collator.compare(left.fileName, right.fileName);
+                     if (cmp == 0) {
+                       cmp = collator.compare(left.path, right.path);
+                     }
+                     if (cmp == 0)
+                       return false;
+                     return ascending ? cmp < 0 : cmp > 0;
+                   });
+
+  for (int i = 0; i < static_cast<int>(data.size()); ++i) {
+    entries[i] = data.at(i).path;
+  }
+}
+
+void Backend::resortByTime(QStringList &entries, bool newestFirst) const {
+  if (entries.size() < 2)
+    return;
+
+  struct TimeEntry {
+    QString path;
+    qint64 timestamp;
+  };
+
+  std::vector<TimeEntry> data;
+  data.reserve(entries.size());
+  for (const QString &path : entries) {
+    const QFileInfo info(path);
+    const QDateTime modified = info.lastModified();
+    const qint64 stamp = modified.isValid() ? modified.toMSecsSinceEpoch() : 0;
+    data.push_back(TimeEntry{path, stamp});
+  }
+
+  std::stable_sort(data.begin(), data.end(),
+                   [newestFirst](const TimeEntry &left,
+                                 const TimeEntry &right) {
+                     if (left.timestamp == right.timestamp) {
+                       return left.path < right.path;
+                     }
+                     return newestFirst ? left.timestamp > right.timestamp
+                                        : left.timestamp < right.timestamp;
+                   });
+
+  for (int i = 0; i < static_cast<int>(data.size()); ++i) {
+    entries[i] = data.at(i).path;
+  }
+}
+
+QString Backend::sortDescription(SortMode mode) const {
+  switch (mode) {
+  case SortNameAscending:
+    return tr("已按文件名排序（A → Z）。");
+  case SortNameDescending:
+    return tr("已按文件名排序（Z → A）。");
+  case SortTimeNewestFirst:
+    return tr("已按修改时间排序（最新在前）。");
+  case SortTimeOldestFirst:
+    return tr("已按修改时间排序（最旧在前）。");
+  case SortManual:
+    break;
+  }
+  return QString();
 }
