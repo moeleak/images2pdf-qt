@@ -6,6 +6,7 @@
 #include <QQuickStyle>
 
 int main(int argc, char *argv[]) {
+  qputenv("QT_SCALE_FACTOR", "0.75");
   QGuiApplication app(argc, argv);
   QQuickStyle::setStyle("Material");
 

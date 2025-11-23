@@ -46,14 +46,15 @@
             ];
 
             # Runtime dependencies (Libraries)
-            buildInputs = (with pkgs.qt6; [
-              qtbase
-              qtdeclarative
-              qtsvg
-              qttools
-              qt5compat
-            ])
-            ++ (if pkgs.stdenv.isLinux then [ pkgs.qt6.qtwayland ] else []);
+            buildInputs =
+              (with pkgs.qt6; [
+                qtbase
+                qtdeclarative
+                qtsvg
+                qttools
+                qt5compat
+              ])
+              ++ (if pkgs.stdenv.isLinux then [ pkgs.qt6.qtwayland ] else [ ]);
           };
         }
       );
@@ -82,6 +83,11 @@
             shellHook = ''
               echo "Qt Version: $(qmake --version | grep -o 'Qt version [0-9.]*' | cut -d ' ' -f 3)"
               echo "Compiler: $(c++ --version | head -n 1)"
+              if [ ! -f build/compile_commands.json ]; then
+                echo "Generating compile_commands.json..."
+                mkdir -p build
+                cmake -S . -B build
+              fi
               ln -sf build/compile_commands.json .
             '';
           };
