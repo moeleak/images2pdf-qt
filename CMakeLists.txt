@@ -12,6 +12,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Qml
     Quick
     QuickControls2
+    Concurrent
 )
 option(IMAGES2PDF_QT_ENABLE_DEPLOY "Bundle QML dependencies via qt6_deploy during install" ON)
 option(IMAGES2PDF_QT_MACOS_BUNDLE "Build a macOS .app bundle instead of a standalone binary" OFF)
@@ -50,7 +51,8 @@ target_link_libraries(images2pdf-qt PRIVATE
     Qt6::Gui
     Qt6::Qml
     Qt6::Quick
-    Qt6::QuickControls2)
+    Qt6::QuickControls2
+    Qt6::Concurrent)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_options(images2pdf-qt PRIVATE -static-libstdc++ -static-libgcc)
 endif()

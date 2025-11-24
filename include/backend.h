@@ -6,8 +6,8 @@
 #include <QPageSize>
 #include <QString>
 #include <QStringList>
+#include <QFutureWatcher>
 
-// 内部模型类，用于管理图片列表，支持不中断的拖拽排序
 class ImageModel : public QAbstractListModel {
   Q_OBJECT
 public:
@@ -20,7 +20,6 @@ public:
                 int role = Qt::DisplayRole) const override;
   QHash<int, QByteArray> roleNames() const override;
 
-  // 数据操作函数
   void addPaths(const QStringList &paths);
   void removeAt(int index);
   void move(int from, int to);
@@ -36,9 +35,7 @@ private:
 
 class Backend : public QObject {
   Q_OBJECT
-  // 使用 imageModel 替代原来的 QStringList
   Q_PROPERTY(QObject *imageModel READ imageModel CONSTANT)
-  // 新增 imageCount 方便 QML 读取数量
   Q_PROPERTY(int imageCount READ imageCount NOTIFY imageCountChanged)
 
   Q_PROPERTY(QString windowTitle READ windowTitle CONSTANT)
@@ -103,6 +100,7 @@ private:
   void resortByName(QStringList &entries, bool ascending) const;
   void resortByTime(QStringList &entries, bool newestFirst) const;
   QString sortDescription(SortMode mode) const;
+  void handleDirectoryScanFinished();
 
   QString m_windowTitle;
   QString m_statusText;
@@ -110,7 +108,8 @@ private:
   double m_conversionProgress;
   SortMode m_sortMode;
 
-  ImageModel *m_model; // 核心模型实例
+  ImageModel *m_model;
+  QFutureWatcher<QStringList> m_scanWatcher;
 };
 
 #endif // BACKEND_H

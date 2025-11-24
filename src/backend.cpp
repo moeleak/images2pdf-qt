@@ -14,6 +14,7 @@
 #include <QPdfWriter>
 #include <QScopeGuard>
 #include <QSet>
+#include <QtConcurrent>
 #include <QUrl>
 #include <algorithm>
 #include <cmath>
@@ -116,6 +117,8 @@ Backend::Backend(QObject *parent)
       m_conversionRunning(false), m_conversionProgress(0.0),
       m_sortMode(SortNameAscending) {
   m_model = new ImageModel(this);
+  connect(&m_scanWatcher, &QFutureWatcher<QStringList>::finished, this,
+          &Backend::handleDirectoryScanFinished);
 }
 
 QObject *Backend::imageModel() const { return m_model; }
@@ -193,6 +196,11 @@ void Backend::clearImages() {
 
 bool Backend::addDirectory(const QString &directoryPath,
                            bool includeSubdirectories) {
+  if (m_scanWatcher.isRunning()) {
+    setStatusText(QStringLiteral("正在读取文件夹，请稍候…"));
+    return false;
+  }
+
   QString input = directoryPath.trimmed();
   if (input.isEmpty()) {
     setStatusText(QStringLiteral("请选择有效的文件夹。"));
@@ -216,25 +224,38 @@ bool Backend::addDirectory(const QString &directoryPath,
     return false;
   }
 
-  QStringList foundFiles;
-  const QDirIterator::IteratorFlags flags = includeSubdirectories
-                                                ? QDirIterator::Subdirectories
-                                                : QDirIterator::NoIteratorFlags;
-  QDirIterator it(dir.absolutePath(), QDir::Files, flags);
-  while (it.hasNext()) {
-    const QString filePath = it.next();
-    if (hasSupportedExtension(filePath)) {
+  setStatusText(QStringLiteral("正在扫描文件夹…"));
+
+  const QString targetPath = dir.absolutePath();
+  auto future = QtConcurrent::run([targetPath, includeSubdirectories]() {
+    QStringList foundFiles;
+    QSet<QString> seen;
+    const QDirIterator::IteratorFlags flags =
+        includeSubdirectories ? QDirIterator::Subdirectories
+                              : QDirIterator::NoIteratorFlags;
+    QDirIterator it(targetPath, QDir::Files, flags);
+    while (it.hasNext()) {
+      const QString filePath = QDir::cleanPath(it.next());
+      if (!hasSupportedExtension(filePath))
+        continue;
+      if (seen.contains(filePath))
+        continue;
+      seen.insert(filePath);
       foundFiles.append(filePath);
     }
-  }
-
-  if (foundFiles.isEmpty()) {
-    setStatusText(QStringLiteral("该文件夹中没有可用的图片。"));
-    return false;
-  }
-
-  addImages(foundFiles);
+    return foundFiles;
+  });
+  m_scanWatcher.setFuture(future);
   return true;
+}
+
+void Backend::handleDirectoryScanFinished() {
+  const QStringList files = m_scanWatcher.result();
+  if (files.isEmpty()) {
+    setStatusText(QStringLiteral("该文件夹中没有可用的图片。"));
+    return;
+  }
+  addImages(files);
 }
 
 bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
