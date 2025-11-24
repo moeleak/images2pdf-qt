@@ -2,11 +2,13 @@
 #define BACKEND_H
 
 #include <QAbstractListModel>
+#include <QFutureWatcher>
 #include <QObject>
 #include <QPageSize>
 #include <QString>
 #include <QStringList>
-#include <QFutureWatcher>
+#include <QTimer>
+#include <atomic>
 
 class ImageModel : public QAbstractListModel {
   Q_OBJECT
@@ -101,6 +103,8 @@ private:
   void resortByTime(QStringList &entries, bool newestFirst) const;
   QString sortDescription(SortMode mode) const;
   void handleDirectoryScanFinished();
+  void startBatchInsert(QStringList files);
+  void processBatchInsert();
 
   QString m_windowTitle;
   QString m_statusText;
@@ -110,6 +114,9 @@ private:
 
   ImageModel *m_model;
   QFutureWatcher<QStringList> m_scanWatcher;
+  QStringList m_pendingInsert;
+  QTimer m_batchInsertTimer;
+  std::atomic_bool m_cancelScan;
 };
 
 #endif // BACKEND_H

@@ -115,8 +115,12 @@ Backend::Backend(QObject *parent)
     : QObject(parent), m_windowTitle(QStringLiteral("批量图片转 PDF")),
       m_statusText(QStringLiteral("请选择需要转换的图片。")),
       m_conversionRunning(false), m_conversionProgress(0.0),
-      m_sortMode(SortNameAscending) {
+      m_sortMode(SortNameAscending), m_cancelScan(false) {
   m_model = new ImageModel(this);
+  m_batchInsertTimer.setInterval(0);
+  m_batchInsertTimer.setSingleShot(false);
+  connect(&m_batchInsertTimer, &QTimer::timeout, this,
+          &Backend::processBatchInsert);
   connect(&m_scanWatcher, &QFutureWatcher<QStringList>::finished, this,
           &Backend::handleDirectoryScanFinished);
 }
@@ -189,6 +193,9 @@ void Backend::moveImage(int fromIndex, int toIndex) {
 }
 
 void Backend::clearImages() {
+  m_cancelScan.store(true, std::memory_order_relaxed);
+  m_pendingInsert.clear();
+  m_batchInsertTimer.stop();
   m_model->clear();
   emit imageCountChanged();
   setStatusText(QStringLiteral("已清空所有图片。"));
@@ -225,9 +232,13 @@ bool Backend::addDirectory(const QString &directoryPath,
   }
 
   setStatusText(QStringLiteral("正在扫描文件夹…"));
+  m_cancelScan.store(false, std::memory_order_relaxed);
+  m_pendingInsert.clear();
+  m_batchInsertTimer.stop();
 
   const QString targetPath = dir.absolutePath();
-  auto future = QtConcurrent::run([targetPath, includeSubdirectories]() {
+  auto future = QtConcurrent::run([targetPath, includeSubdirectories,
+                                   cancelFlag = &m_cancelScan]() {
     QStringList foundFiles;
     QSet<QString> seen;
     const QDirIterator::IteratorFlags flags =
@@ -235,6 +246,8 @@ bool Backend::addDirectory(const QString &directoryPath,
                               : QDirIterator::NoIteratorFlags;
     QDirIterator it(targetPath, QDir::Files, flags);
     while (it.hasNext()) {
+      if (cancelFlag->load(std::memory_order_relaxed))
+        break;
       const QString filePath = QDir::cleanPath(it.next());
       if (!hasSupportedExtension(filePath))
         continue;
@@ -250,12 +263,70 @@ bool Backend::addDirectory(const QString &directoryPath,
 }
 
 void Backend::handleDirectoryScanFinished() {
+  if (m_cancelScan.load(std::memory_order_relaxed)) {
+    setStatusText(QStringLiteral("扫描已取消。"));
+    return;
+  }
   const QStringList files = m_scanWatcher.result();
   if (files.isEmpty()) {
     setStatusText(QStringLiteral("该文件夹中没有可用的图片。"));
     return;
   }
-  addImages(files);
+  startBatchInsert(files);
+}
+
+void Backend::startBatchInsert(QStringList files) {
+  m_batchInsertTimer.stop();
+  m_pendingInsert.clear();
+
+  QSet<QString> existing;
+  for (const QString &path : m_model->getList()) {
+    existing.insert(path);
+  }
+
+  for (const QString &path : files) {
+    const QString cleaned = QDir::cleanPath(path);
+    if (cleaned.isEmpty() || existing.contains(cleaned))
+      continue;
+    existing.insert(cleaned);
+    m_pendingInsert.append(cleaned);
+  }
+
+  if (m_pendingInsert.isEmpty()) {
+    setStatusText(QStringLiteral("没有新的图片被添加。"));
+    return;
+  }
+
+  setStatusText(tr("正在导入 %1 张图片…").arg(m_pendingInsert.size()));
+  m_batchInsertTimer.start();
+}
+
+void Backend::processBatchInsert() {
+  if (m_pendingInsert.isEmpty()) {
+    m_batchInsertTimer.stop();
+    return;
+  }
+
+  constexpr int kBatchSize = 256;
+  const int chunkCount =
+      std::min(kBatchSize, static_cast<int>(m_pendingInsert.size()));
+
+  QStringList chunk;
+  chunk.reserve(chunkCount);
+  for (int i = 0; i < chunkCount; ++i) {
+    chunk.append(m_pendingInsert.at(i));
+  }
+  m_pendingInsert.erase(m_pendingInsert.begin(),
+                        m_pendingInsert.begin() + chunkCount);
+
+  m_model->addPaths(chunk);
+  emit imageCountChanged();
+
+  if (m_pendingInsert.isEmpty()) {
+    m_batchInsertTimer.stop();
+    applyCurrentSort(false);
+    setStatusText(tr("已选择 %1 张图片。").arg(m_model->count()));
+  }
 }
 
 bool Backend::convertToPdf(const QString &outputFile, int marginMillimeters,
